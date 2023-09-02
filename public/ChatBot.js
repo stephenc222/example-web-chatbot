@@ -200,6 +200,12 @@ class ChatBot extends HTMLElement {
     this.apiPending = true // API call starts
     this.updateSendButtonState()
 
+    // Scroll to the newest message
+    const chatLog = this.shadowRoot.querySelector(".chat-log")
+    if (chatLog) {
+      chatLog.scrollTop = chatLog.scrollHeight
+    }
+
     // Set a minimum display time for "thinking..."
     this.thinkingTimeout = setTimeout(async () => {
       // Remove the "thinking..." message
