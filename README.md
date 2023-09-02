@@ -10,4 +10,4 @@ Make sure that you have a `.env` file that looks like this:
 OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 ```
 
-Then just `npm install` and `npm start`.
+Then just `npm install` and `npm start` and open `http://localhost:3000` in your browser.

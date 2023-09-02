@@ -10,6 +10,9 @@ const closeIcon = `
 </svg>
 `
 
+const TOKEN_LIMIT = 1000 // Adjust this value as needed
+const SPECIAL_TOKEN_BUFFER = 10
+
 class ChatBot extends HTMLElement {
   constructor() {
     super()
@@ -20,6 +23,7 @@ class ChatBot extends HTMLElement {
     this.messages = [] // To store chat messages
     this.thinkingTimeout = null // For handling the minimum display time of "thinking..."
     this.apiPending = false // To track the API call's state
+    this.totalTokens = 0 // To track the total number of tokens
   }
 
   get styles() {
@@ -155,6 +159,11 @@ class ChatBot extends HTMLElement {
     `
   }
 
+  estimateTokens(message) {
+    // Simple estimation: count words and add some buffer for special tokens
+    return message.split(/\s+/).length + SPECIAL_TOKEN_BUFFER
+  }
+
   connectedCallback() {
     this.render()
     this.addEventListeners()
@@ -173,6 +182,8 @@ class ChatBot extends HTMLElement {
   }
 
   async sendMessage(message) {
+    this.totalTokens += this.estimateTokens(message)
+
     this.messages.push({ role: "user", content: message })
     this.render()
     this.addEventListeners()
@@ -210,6 +221,10 @@ class ChatBot extends HTMLElement {
 
         const data = await response.json()
 
+        this.totalTokens += this.estimateTokens(
+          data.content || "Sorry, I didn't understand that."
+        )
+
         // Assuming the server returns a JSON object with a "content" key for the bot's reply
         this.messages.push({
           role: "assistant",
@@ -223,9 +238,10 @@ class ChatBot extends HTMLElement {
         })
       }
 
-      // Limit the number of stored messages to 50
-      while (this.messages.length > 50) {
-        this.messages.shift()
+      // Check if the total number of tokens exceeds the limit
+      while (this.totalTokens > TOKEN_LIMIT && this.messages.length > 0) {
+        const removedMessage = this.messages.shift()
+        this.totalTokens -= this.estimateTokens(removedMessage.content)
       }
 
       this.apiPending = false
