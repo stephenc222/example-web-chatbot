@@ -18,6 +18,8 @@ class ChatBot extends HTMLElement {
     this.attachShadow({ mode: "open" })
     this.isOpen = false // To track the chat window's state
     this.messages = [] // To store chat messages
+    this.thinkingTimeout = null // For handling the minimum display time of "thinking..."
+    this.apiPending = false // To track the API call's state
   }
 
   get styles() {
@@ -84,7 +86,12 @@ class ChatBot extends HTMLElement {
     .chat-log .message.user {
       color: black;
     }
-    .chat-log .message.bot {
+    .chat-log .message.assistant {
+      color: #0070f3;
+    }
+
+    .chat-log .message.assistant-thinking {
+      font-style: italic;
       color: #0070f3;
     }
 
@@ -120,7 +127,12 @@ class ChatBot extends HTMLElement {
       transition: background-color 0.3s;
       font-size: 14px; /* Consistent with the input field */
     }
-    
+
+    .send-btn[disabled] {
+      background-color: #b3b3b3; /* Grayed out color */
+      cursor: not-allowed;
+    }
+
     .send-btn:hover {
       background-color: #0051bb; /* Darker shade on hover */
     }
@@ -148,6 +160,12 @@ class ChatBot extends HTMLElement {
     this.addEventListeners()
   }
 
+  disconnectedCallback() {
+    if (this.thinkingTimeout) {
+      clearTimeout(this.thinkingTimeout)
+    }
+  }
+
   toggleChat() {
     this.isOpen = !this.isOpen
     this.render()
@@ -155,49 +173,76 @@ class ChatBot extends HTMLElement {
   }
 
   async sendMessage(message) {
-    this.messages.push({ sender: "user", text: message })
+    this.messages.push({ role: "user", content: message })
     this.render()
     this.addEventListeners()
-    // Send the user's message to the server
-    try {
-      const response = await fetch("http://localhost:3000/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ message: message }), // Assuming the server expects a JSON payload with a "message" key
-      })
 
-      if (!response.ok) {
-        throw new Error("Network response was not ok")
+    // Add a "thinking..." message
+    const thinkingMessage = {
+      role: "assistant-thinking",
+      content: "thinking...",
+    }
+    this.messages.push(thinkingMessage)
+    this.render()
+    this.addEventListeners()
+
+    this.apiPending = true // API call starts
+    this.updateSendButtonState()
+
+    // Set a minimum display time for "thinking..."
+    this.thinkingTimeout = setTimeout(async () => {
+      // Remove the "thinking..." message
+      this.messages = this.messages.filter((msg) => msg !== thinkingMessage)
+
+      // Send the user's message to the server
+      try {
+        const response = await fetch("http://localhost:3000/api/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ messages: this.messages.slice(-10) }), // Assuming the server expects a JSON payload with a "message" key
+        })
+
+        if (!response.ok) {
+          throw new Error("Network response was not ok")
+        }
+
+        const data = await response.json()
+
+        // Assuming the server returns a JSON object with a "content" key for the bot's reply
+        this.messages.push({
+          role: "assistant",
+          content: data.content || "Sorry, I didn't understand that.",
+        })
+      } catch (error) {
+        console.error("There was a problem with the fetch operation:", error)
+        this.messages.push({
+          role: "assistant",
+          content: "Sorry, there was an error processing your message.",
+        })
       }
 
-      const data = await response.json()
+      // Limit the number of stored messages to 50
+      while (this.messages.length > 50) {
+        this.messages.shift()
+      }
 
-      // Assuming the server returns a JSON object with a "text" key for the bot's reply
-      this.messages.push({
-        sender: "bot",
-        text: data.text || "Sorry, I didn't understand that.",
-      })
-    } catch (error) {
-      console.error("There was a problem with the fetch operation:", error)
-      this.messages.push({
-        sender: "bot",
-        text: "Sorry, there was an error processing your message.",
-      })
-    }
-    this.render()
-    this.addEventListeners()
-    // Return focus to the input field
-    const inputField = this.shadowRoot.querySelector(".chat-input input")
-    if (inputField) {
-      inputField.focus()
-    }
-    // Scroll to the newest message
-    const chatLog = this.shadowRoot.querySelector(".chat-log")
-    if (chatLog) {
-      chatLog.scrollTop = chatLog.scrollHeight
-    }
+      this.apiPending = false
+      this.render()
+      this.addEventListeners()
+
+      // Return focus to the input field
+      const inputField = this.shadowRoot.querySelector(".chat-input input")
+      if (inputField) {
+        inputField.focus()
+      }
+      // Scroll to the newest message
+      const chatLog = this.shadowRoot.querySelector(".chat-log")
+      if (chatLog) {
+        chatLog.scrollTop = chatLog.scrollHeight
+      }
+    }, 1000) // Display "thinking..." for at least 1 second
   }
 
   render() {
@@ -211,13 +256,15 @@ class ChatBot extends HTMLElement {
         <div class="chat-log">
           ${this.messages
             .map(
-              (msg) => `<div class="message ${msg.sender}">${msg.text}</div>`
+              (msg) => `<div class="message ${msg.role}">${msg.content}</div>`
             )
             .join("")}
         </div>
         <div class="chat-input">
           <input type="text" placeholder="Type a message...">
-          <button class="send-btn">Send</button>
+          <button class="send-btn" ${
+            this.apiPending ? "disabled" : ""
+          }>Send</button>
         </div>
       </div>
     `
@@ -252,6 +299,15 @@ class ChatBot extends HTMLElement {
   clearAndFocusInput(inputField) {
     inputField.value = ""
     inputField.focus()
+  }
+
+  updateSendButtonState() {
+    const sendButton = this.shadowRoot.querySelector(".send-btn")
+    if (this.apiPending) {
+      sendButton.setAttribute("disabled", "disabled")
+    } else {
+      sendButton.removeAttribute("disabled")
+    }
   }
 
   addEventListeners() {

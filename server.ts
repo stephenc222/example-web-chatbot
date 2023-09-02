@@ -18,18 +18,20 @@ app.post("/api/chat", async (req: Request, res: Response) => {
   try {
     const gptResponse = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
-      messages: [{ role: "user", content: req.body.message }],
+      messages: req.body.messages,
       max_tokens: 150,
     })
 
     if (gptResponse && gptResponse.choices && gptResponse.choices.length > 0) {
-      res.status(200).json({ text: gptResponse.choices[0].message.content })
+      res.status(200).json({ content: gptResponse.choices[0].message.content })
     } else {
-      res.status(500).json({ text: "Failed to get a response from the model." })
+      res
+        .status(500)
+        .json({ content: "Failed to get a response from the model." })
     }
   } catch (error) {
     console.error("Error calling OpenAI:", error)
-    res.status(500).json({ text: "Internal server error." })
+    res.status(500).json({ content: "Internal server error." })
   }
 })
 
